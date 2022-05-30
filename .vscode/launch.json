@@ -1,0 +1,44 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: yf_downloader",
+            "type": "python",
+            "request": "launch",
+            "module": "yf_downloader",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/test/:${workspaceFolder}",
+            }
+        },
+        {
+            "name": "Python: main_data",
+            "type": "python",
+            "request": "launch",
+            "module": "main_data",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/test/:${workspaceFolder}",
+            },
+        },
+        {
+            "name": "Python: Pytest",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/test/:${workspaceFolder}",
+                "TEST_ENV": "pytest",
+            },
+            "args": [
+                // "test", // directory name
+                // "--headful",
+                "--capture=no",
+                // "--html=report.html"
+            ],
+        }
+    ]
+}

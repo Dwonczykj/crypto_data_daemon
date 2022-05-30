@@ -1,0 +1,25 @@
+{
+    "cmake.configureOnOpen": false,
+    "python.defaultInterpreterPath": "/Users/joeyd/opt/anaconda3/envs/finance_data_crypto/bin/python",
+    "python.pythonPath": "/Users/joeyd/opt/anaconda3/envs/finance_data_crypto/bin/python",
+    "python.testing.pytestArgs": [],
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths": [],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportPropertyTypeMismatch": "error",
+        "reportFunctionMemberAccess": "information",
+        "reportUnboundVariable": "warning",
+        "reportImplicitStringConcatenation": "warning",
+        "reportUntypedClassDecorator": "warning",
+        "reportMissingParameterType": "information",
+        "reportUnusedImport": "warning",
+        "reportDuplicateImport": "error",
+        "reportMissingSuperCall": "none",
+        "reportUnnecessaryIsInstance": "none"
+    },
+    "dart.openDevTools": "never",
+    "dart.devToolsReuseWindows": true,
+    "workbench.editor.showTabs": true,
+}
