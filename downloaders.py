@@ -11,6 +11,8 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from tinydb import Query, TinyDB
 
+from slack import upload_plot_slack
+
 TKR = TypeVar('TKR', str, list[str])
 
 # https://medium.com/swlh/free-historical-market-data-download-in-python-74e8edd462cf
@@ -364,12 +366,14 @@ def plot_mpl(yf_cache:DownloadCache, ticker_ccy_pairs:str|list[str], plot_mpl_ty
         if len(tickers) > 1:
             ax_arr = ax_arr.flatten()
         figRet, axReturns = plt.subplots(1, 1, sharex=False) #type:ignore
+        assert isinstance(ax_arr, np.ndarray)
         for i, (ticker, ticker_ccy_pair) in enumerate(list(zip(tickers,ticker_ccy_pairs))):
             data[ticker_ccy_pair]['pct_change'] = data[ticker_ccy_pair]['Close'].pct_change()
             data[ticker_ccy_pair]['log_ret'] = np.log(data[ticker_ccy_pair]['Close']) - np.log(data[ticker_ccy_pair]['Close'].shift(1))
             data[ticker_ccy_pair]['ret'] = (data[ticker_ccy_pair]['Close'] - data[ticker_ccy_pair]
                                    ['Close'].shift(1)) / data[ticker_ccy_pair]['Close'].shift(1)
-            ax1 = ax_arr[i]
+            ax1:plt.Axes = ax_arr[i]
+            ax1.set_title(ticker_ccy_pair)
             ax1.plot(data[ticker_ccy_pair]['Close'], label=ticker_ccy_pair)
             
             time_since_data_start = (data[ticker_ccy_pair].index - data[ticker_ccy_pair].index[0]).map(
@@ -412,6 +416,9 @@ def plot_mpl(yf_cache:DownloadCache, ticker_ccy_pairs:str|list[str], plot_mpl_ty
         
         axReturns.set_ylabel('smoothed return')
         axReturns.legend()
+        
+        upload_plot_slack(fig=fig)
+        
     plt.show()
 
 

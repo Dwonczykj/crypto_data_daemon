@@ -1,17 +1,40 @@
-
-# https://medium.com/@sharan.aadarsh/sending-notification-to-slack-using-python-8b71d4f622f3
-# https://gember-workspace.slack.com/services/B03JV0Y3745?added=1
-
 import json
 import os
 import random
 import sys
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from matplotlib.figure import Figure
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 load_dotenv()
+
+client = WebClient(token=os.getenv('SLACK_BOT_TOKEN')) #type:ignore
+client.files_upload(channels='C03JV0WSCMT', file="./temp.png")
+
+# from slacker import Slacker
+
+# slack = Slacker("supersecretkey")
+
+def upload_plot_slack(fig:Figure):
+    try:
+        fig.savefig("temp.png")
+        filepath="./temp.png"
+        response = client.files_upload(channels='C03JV0WSCMT', file=filepath)
+        assert response["file"]  # the uploaded file
+    except SlackApiError as e:
+        # You will get a SlackApiError if "ok" is False
+        assert e.response["ok"] is False
+        assert e.response["error"]  # str like 'invalid_auth', 'channel_not_found'
+        print(f"Got an error: {e.response['error']}")
+    except Exception as e:
+        print('got an upload error....' + str(e))
+    # slack.files.upload("temp.png", channels="@crypto")
+
 url = os.getenv('SLACK_WEBHOOK')
 assert url is not None
 
@@ -28,7 +51,7 @@ def send_slack(title:str, message:str, data:pd.DataFrame|dict|None=None):
     """
     slack_data = {
         "username": "CryptoAlertBot",
-        "icon_emoji": ":satellite:",
+        "icon_emoji": ":satellite:",  # https://www.webfx.com/tools/emoji-cheat-sheet/
         "channel" : "#crypto",
         "attachments": [
             {

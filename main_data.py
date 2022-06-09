@@ -85,7 +85,7 @@ if __name__ == '__main__':
     # get tickers with correlations below -0.5
     most_negatively_correlated = correlations[correlations < 0.5]
     
-    pnl = {t:0.0 for t in tickers}
+    pnl = {t:{'Absolute':0.0,'Money-Weighted Return': 0.0} for t in tickers}
     for ticker in tickers:
         assert f'{ticker}-GBP' in data
         ticker_pair = f'{ticker}-GBP'
