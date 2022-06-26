@@ -14,7 +14,7 @@ from slack_sdk.errors import SlackApiError
 load_dotenv()
 
 client = WebClient(token=os.getenv('SLACK_BOT_TOKEN')) #type:ignore
-client.files_upload(channels='C03JV0WSCMT', file="./temp.png")
+# client.files_upload(channels='C03JV0WSCMT', file="./temp.png")
 
 # from slacker import Slacker
 

@@ -4,8 +4,12 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from downloaders import get_ticker_watchlist
+from utils import ifcall
+
 test_df = pd.read_excel(
-    '/Users/joeyd/Library/CloudStorage/OneDrive-Personal/Assets/Cryptocurrency-Portfolio-Tracker.xlsx', 
+    # '/Users/joeyd/Library/CloudStorage/OneDrive-Personal/Assets/Cryptocurrency-Portfolio-Tracker.xlsx', 
+    'Cryptocurrency-Portfolio-Tracker.xlsx',
     sheet_name='test_df',
     header=0,
     keep_default_na=False,
@@ -161,16 +165,116 @@ def remaining_holding_price_paid(vals_in_group: pd.DataFrame, before_date: datet
     # df_out['Money Weighted Average Price / Coin'] = vals_in_group['Price / Coin'] * df_out['money weights']
     # return df_out.groupby(['Ticker'])[['Money Weighted Average Price / Coin']].sum()
 
+def splitAssetFromTickerPair(ticker_pair:str, potential_symbol:str|None):
+    """_summary_
+    get the traded assets from a tickerpair
+    Args:
+        ticker_pair (str): i.e. MATICGBP
+        potential_symbol (str | None): i.e. MATIC
 
+    Returns: a dictionary where the keys are the symbols and the first labels 'crypto' or 'fiat' 
+        _type_: dict[str,str]
+    """
+    
+    ticker_pair = ticker_pair.upper()
+    fiat_crypto:dict[str,str] = {}
+    fiat_ccy = ifcall(X=[a for a in ['GBP', 'EUR', 'USD'] if ticker_pair.endswith(a)], predicateCallX= lambda x: bool(x), callIfWithX=lambda x: x[0])
+    if fiat_ccy is not None:
+        fiat_crypto[fiat_ccy] = 'fiat'
+        other_symbol = ticker_pair.replace(fiat_ccy,'')
+        fiat_crypto[other_symbol] = 'fiat' if other_symbol in ['GBP', 'EUR', 'USD'] else 'crypto'
+        return fiat_crypto
+    
+    potential_tickers = get_ticker_watchlist()
 
-def get_holdings(save_df:bool=True):
+    def _f(symbol: str, _fiat_crypto: dict[str, str] = {}):
+        _fiat_crypto = {**_fiat_crypto}
+        if any([p for p in potential_tickers['crypto'] if p.startswith(symbol[:3])]):
+            _fiat_crypto[symbol] = 'crypto'
+        elif any([p for p in potential_tickers['fx'] if p.startswith(symbol[:3])]) or symbol == 'USD':
+            _fiat_crypto[symbol] = 'fiat'
+        else:
+            # assume crypto ticker symbol
+            _fiat_crypto[symbol] = 'crypto'
+        return _fiat_crypto
+    
+    if potential_symbol is None:
+        
+        potential_symbol = next((p for p in potential_tickers['crypto'] if p.startswith(
+            ticker_pair[:3])), '-').split('-')[0]
+        
+        if potential_symbol == '':
+            potential_symbol = ticker_pair[-3:]
+        
+            
+    if potential_symbol.upper() in ticker_pair:
+        potential_symbol = potential_symbol.upper()
+        other_symbol = ticker_pair.upper().replace(potential_symbol.upper(),'')
+        
+        fiat_crypto = _f(potential_symbol, fiat_crypto)
+        fiat_crypto = _f(other_symbol, fiat_crypto)
+    
+        
+        
+        
+    return fiat_crypto
+    
+        
+            
+        
+
+def get_holdings(binance_order_hist:pd.DataFrame|None=None, save_df:bool=True):
+    """_summary_
+
+    Args:
+        binance_order_hist (pd.DataFrame | None, optional): with columns: ['symbol', 'orderId', 'orderListId', 'price', 'qty', 'quoteQty', 'commission', 'commissionAsset', 'time', 'isBuyer', 'isMaker', 'isBestMatch', 'datetime']
+        save_df (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
     holdings_df = pd.read_excel(
-        '/Users/joeyd/Library/CloudStorage/OneDrive-Personal/Assets/Cryptocurrency-Portfolio-Tracker.xlsx', 
+        # '/Users/joeyd/Library/CloudStorage/OneDrive-Personal/Assets/Cryptocurrency-Portfolio-Tracker.xlsx', 
+        'Cryptocurrency-Portfolio-Tracker.xlsx', 
         sheet_name='Transactions',
         header=0,
         usecols="A:O",
         keep_default_na=False,
         )
+    
+    if binance_order_hist is not None:
+        binance_merge = pd.DataFrame(columns=holdings_df.columns)
+        
+        i = 1
+        for row_id, row in binance_order_hist.iterrows():
+            fiat_crypto = splitAssetFromTickerPair(ticker_pair=row['symbol'], potential_symbol=row['commissionAsset'])
+            for k in fiat_crypto.keys():
+                merge = {}
+                if fiat_crypto[k] == 'fiat':
+                    continue
+                if fiat_crypto[k] == 'crypto':
+                    merge['Ticker'] = k
+                    if row['isBuyer'] == True:
+                        merge['B/S'] = 'BUY' if row['symbol'].upper().startswith(k) else 'SELL' if row['symbol'].upper().endswith(k) else 'N/A'
+                    merge['Cash Paid (inc fee)'] = (row['qty'] + row['commission']) * row['price']
+                    merge['Cash Ccy'] = 'GBP'
+                    merge['Amount'] = row['qty']
+                    merge['Time (UTC)'] = row['datetime']
+                    merge['Price / Coin'] = row['price']
+                    merge['Network Fee'] = row['commission']
+                    merge['Network Fee Ccy'] = row['commissionAsset']
+                    merge['Platform'] = 'Binance'
+                    merge['Blockchain'] = ''
+                    merge['Asset Value in Fiat'] = row['quoteQty']
+                    merge['Asset Value Fiat Ccy'] = 'GBP'
+                    # binance_merge = binance_merge.append(merge, ignore_index=True)
+                    binance_merge = pd.concat([binance_merge, pd.DataFrame(merge, index=[i])], axis=0)
+                    i += 1
+        binance_merge = binance_merge.reset_index()
+        holdings_df = pd.concat([holdings_df, binance_merge], axis=0)
+        holdings_df = holdings_df.reset_index()
+                    
+            
 
     holdings_df = holdings_df[~((holdings_df['Ticker'].isna())|(holdings_df['Ticker']=='')|(holdings_df['Ticker'].isnull()))]
     

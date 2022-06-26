@@ -1,6 +1,7 @@
 *.env*
 *.log*
 *.tinydb.json
+*.csv
 *.xlsx
 *.xlsm
 *.xls
@@ -174,6 +175,10 @@ app.*.map.json
 
 **/android/key.properties
 .env
+
+# all files with private information such as prices, my trades etc
+*.csv
+*.xls*
 
 # MacOS
 *.DS_Store

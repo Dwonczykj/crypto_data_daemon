@@ -1,11 +1,14 @@
+import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+import pandas as pd
+import pytz
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
-import json
-import pandas as pd
 from tinydb import Query
+
 from downloaders import DownloadCache
-from datetime import datetime
 
 url = 'https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
 parameters = {
@@ -31,7 +34,7 @@ except (ConnectionError, Timeout, TooManyRedirects) as e:
   
   
 class CoinmarketCache(DownloadCache):
-    def download(self, tickers: str | list[str], start: datetime = datetime.now(), end: datetime = datetime.now(), actions: bool = False, threads: bool = True,
+    def download(self, tickers: str | list[str], start: datetime = datetime.now(pytz.timezone('UTC')), end: datetime = datetime.now(pytz.timezone('UTC')), actions: bool = False, threads: bool = True,
                  group_by: str = 'column', auto_adjust: bool = False, back_adjust: bool = False,
                  progress: bool = True, period: str = "max", show_errors: bool = True, interval: str = "1d", prepost: bool = False,
                  proxy: str | None = None, rounding: bool = False, timeout: float | None = None, **kwargs: Any):
@@ -107,7 +110,9 @@ class CoinmarketCache(DownloadCache):
                 if response_df.shape[0] == 0:
                     result[ticker] = None
                     continue
-                response_df.index = response_df.index.tz_localize(None)  # type:ignore
+                local_tz = datetime.now(timezone(
+                    timedelta(0))).astimezone().tzname()
+                response_df.index = response_df.index.tz_convert('UTC')#type:ignore .tz_localize(None)  #
                 response_df_str = response_df.copy(deep=True)
                 response_df_str.index = response_df_str.index.map(str)
                 response_df_str['Datetime'] = response_df_str.index

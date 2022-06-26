@@ -1,22 +1,25 @@
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import mplfinance as mpf
 import pandas as pd
+import pytz
 import yfinance as yf
-from tinydb import Query
+from colorama import Fore, Style
+from tinydb import Query, TinyDB
 from yahoo_fin import stock_info
+from yfinance import shared
 
 from downloaders import DownloadCache
 
 
 class YFCache(DownloadCache):
-    def download(self, tickers: str | list[str], start: datetime = datetime.now(), end: datetime = datetime.now(), actions: bool = False, threads: bool = True,
+    def download(self, tickers: str | list[str], start: datetime = datetime.now(pytz.timezone('UTC')), end: datetime = datetime.now(pytz.timezone('UTC')), actions: bool = False, threads: bool = True,
                  group_by: str = 'column', auto_adjust: bool = False, back_adjust: bool = False,
                  progress: bool = True, period: str = "max", show_errors: bool = True, interval: str = "1d", prepost: bool = False,
-                 proxy: str | None = None, rounding: bool = False, timeout: float | None = None, **kwargs: Any):
+                 proxy: str | None = None, rounding: bool = False, timeout: float | None = None, force_ignore_cache: bool = False, known_good_ticker: bool = False, **kwargs: Any):
         """Download yahoo tickers -> dict[str,] indexed by ticker
         :Parameters:
             tickers : str, list
@@ -62,8 +65,10 @@ class YFCache(DownloadCache):
             tickers_list = tickers
         x = end - start
         for ticker in tickers_list:
-            _df = self.load_from_db(
-                ticker, start=start, end=end, interval=interval)
+            _df = None
+            if force_ignore_cache == False:
+                _df = self.load_from_db(
+                    ticker, start=start, end=end, interval=interval)
             if _df is not None:
                 response_df = _df
                 if _df is None: # Ticker pair does not exist
@@ -90,9 +95,16 @@ class YFCache(DownloadCache):
                                                         )
                 if response_df.shape[0] == 0:
                     result[ticker] = None
-                    self.db_bad_tickers.insert({'ticker': ticker})
+                    if ticker not in shared._ERRORS or (not str(shared._ERRORS[ticker]).startswith('No data found for this date range')):
+                        self.add_bad_ticker_db(ticker=ticker)
+                        print(Fore.RED + f'No price data available for {ticker} from {yf.__name__}' + Style.RESET_ALL)
                     continue
-                response_df.index = response_df.index.tz_localize(None)  # type:ignore
+                else:
+                    print(Fore.GREEN + f'Fetched pricing data for {ticker} from {yf.__name__} [{response_df.shape[0]} rows]' + Style.RESET_ALL)
+                    
+                local_tz = datetime.now(timezone(
+                    timedelta(0))).astimezone().tzname()
+                response_df.index = response_df.index.tz_convert('UTC')#type:ignore .tz_localize(None)  # 
                 response_df_str = response_df.copy(deep=True)
                 response_df_str.index = response_df_str.index.map(str)
                 response_df_str['Datetime'] = response_df_str.index
@@ -107,6 +119,25 @@ class YFCache(DownloadCache):
                 result[ticker] = None
                 
         return result
+    
+    
+    def get_live_tick_yf(self, ticker: str = 'SPY'):
+        now = datetime.now(pytz.timezone('UTC'))
+        try:
+            if not self.check_bad_ticker_db(ticker=ticker):
+                price = stock_info.get_live_price(ticker)
+            else:
+                price = 0.0
+        except AssertionError as err:
+            if err.args and err.args[0] and 'chart' in err.args[0] and err.args[0]['chart']['error']['code'] == 'Not Found':
+                self.db_bad_tickers.insert({'Ticker': ticker})
+            self.add_bad_ticker_db(ticker=ticker)
+            price = 0.0
+        except:
+            return None
+            
+        logging.debug(now, f'{ticker}:', price)
+        return price
 
 
 def get_intraday_data():
@@ -142,7 +173,7 @@ def listen_realtime_ticks(ticker: str = 'SPY', store_results: bool = False):
     real_time_quotes = pd.DataFrame(columns=['time', 'price'])
 
     for i in range(10):
-        now = datetime.now()
+        now = datetime.now(pytz.timezone('UTC'))
         price = stock_info.get_live_price(ticker)
         print(now, f'{ticker}:', price)
         real_time_quotes.append({'time': now, 'price': price})
@@ -152,11 +183,6 @@ def listen_realtime_ticks(ticker: str = 'SPY', store_results: bool = False):
         real_time_quotes.to_csv('realtime_tick_data.csv', index=False)
     return real_time_quotes
 
-def get_live_tick_yf(ticker: str = 'SPY'):
-    now = datetime.now()
-    price = stock_info.get_live_price(ticker)
-    logging.debug(now, f'{ticker}:', price)
-    return price
         
 
 # Equity Fundamentals scraping

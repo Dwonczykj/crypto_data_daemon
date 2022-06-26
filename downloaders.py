@@ -1,11 +1,13 @@
 import abc
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
 import pandas as pd
+import pytz
+from colorama import Fore, Style
 # import yfinance as yf
 # from yahoo_fin import stock_info
 from scipy.interpolate import interp1d
@@ -22,7 +24,7 @@ class BadIntervalError(Exception):
     def __init__(self, interval:str, *args: object) -> None:
         super().__init__(*args)
 
-class DownloadCache:
+class DownloadCache(abc.ABC):
     def __init__(self, db_name:str='yf') -> None:
         self.db = TinyDB(f'{db_name}.tinydb.json')
         self.db_bad_tickers = TinyDB(f'{db_name}_bad_tickers.tinydb.json')
@@ -58,7 +60,8 @@ class DownloadCache:
         if df.shape[0]<2:
             return DownloadCache.intervals[-1]
         #! check sorted?
-        df.sort_index(inplace=True)
+        df = df.copy().sort_index()
+        # df.sort_index(inplace=True)
         td:timedelta = df.index[1] - df.index[0] #type:ignore
         if td < timedelta(hours=1):
             return f'{int(td.seconds / 60)}m'
@@ -93,6 +96,14 @@ class DownloadCache:
         
         raise BadIntervalError(s)
     
+    def add_bad_ticker_db(self, ticker:str) -> None:
+        """add this ticker to a store of tickers that we have tried to fetch that don't exist on YahooFinance
+
+        Args:
+            ticker (str): ticker to add as not having pricing data with yahoofinance
+        """
+        self.db_bad_tickers.insert({'Ticker': ticker})
+        
     def check_bad_ticker_db(self, ticker:str):
         """return True if the ticker has already been seen and has no data in this cache service provider
 
@@ -103,17 +114,19 @@ class DownloadCache:
             _type_: bool 
         """
         qry = Query()
-        search_response = self.db.search(qry.Ticker == ticker)  # type:ignore
-        return not search_response
+        search_response = self.db_bad_tickers.search(qry.ticker == ticker)  # type:ignore
+        if search_response:
+            print(Fore.RED + f'Ticker cached as bad ticker -> {ticker}' + Style.RESET_ALL)
+            return True
+        return False
             
-    
-    def load_from_db(self, ticker:str, start:datetime=datetime.now(), end:datetime=datetime.now(), interval:str="1d"):
+    def load_from_db(self, ticker: str, start: datetime =datetime.now(pytz.timezone('UTC')), end: datetime=datetime.now(pytz.timezone('UTC')), interval: str="1d"):
         """Explictly use db to fetch data and if not present return None, else return data df.
 
         Args:
             ticker (str): _description_
-            start (datetime, optional): _description_. Defaults to datetime.now().
-            end (datetime, optional): _description_. Defaults to datetime.now().
+            start (datetime, optional): _description_. Defaults to datetime.now(pytz.timezone('UTC')).
+            end (datetime, optional): _description_. Defaults to datetime.now(pytz.timezone('UTC')).
             interval (str, optional): _description_. Defaults to "1d".
 
         Returns:
@@ -125,12 +138,22 @@ class DownloadCache:
             return None
         response_df_str = pd.DataFrame([s for s in search_response])
         response_df_str = response_df_str.set_index('Datetime')
+        
         response_df_str.index = response_df_str.index.map(
-            lambda s: datetime.strptime(s, '%Y-%m-%d %H:%M:%S'))
+            lambda s: datetime.strptime(s, '%Y-%m-%d %H:%M:%S%z') if (s[-6] == '+' and s[-3]==':') else datetime.strptime(s, '%Y-%m-%d %H:%M:%S'))
         response_df = response_df_str.loc[
             (response_df_str.index >= start.strftime('%Y-%m-%d')) & #type:ignore
             (response_df_str.index <= (end + timedelta(days=1) - timedelta(seconds=1)).strftime('%Y-%m-%d')) #type:ignore
             ]
+        max_minutes_diff = DownloadCache.get_minutes(interval)
+        
+        if (end - response_df.index.max()).total_seconds() / 60.0 > max_minutes_diff:
+            # insufficient data in cache
+            self.download(tickers=[ticker], start=response_df.index.max(),end=end, interval=interval, force_ignore_cache=True, known_good_ticker=True)
+        if (response_df.index.min() - start).total_seconds() / 60.0 > max_minutes_diff:
+            self.download(tickers=[ticker], start=start, end=response_df.index.min(
+            ), interval=interval, force_ignore_cache=True, known_good_ticker=True)
+            
         # data_exists_for_window = [s for s in search_response if datetime.strptime(
         #     s['Datetime'], 'YYYY-mm-dd') >= start and datetime.strptime(s['Datetime'], 'YYYY-mm-dd') <= end]
         # response_df = pd.DataFrame(data_exists_for_window)
@@ -140,13 +163,20 @@ class DownloadCache:
             resample_T = DownloadCache.get_minutes(interval) / DownloadCache.get_minutes(implied_granularity)
             response_df:pd.DataFrame = response_df.resample(f'{resample_T}T')\
                 .agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'})
+        elif granularity_comp < 0:
+            return self.download(
+                ticker,
+                start=start, 
+                end=end, 
+                interval=interval,
+                force_ignore_cache=True)
         return response_df
         
     @abc.abstractmethod
-    def download(self, tickers: str | list[str], start: datetime = datetime.now(), end: datetime = datetime.now(), actions: bool = False, threads: bool = True,
+    def download(self, tickers: str | list[str], start: datetime = datetime.now(pytz.timezone('UTC')), end: datetime = datetime.now(pytz.timezone('UTC')), actions: bool = False, threads: bool = True,
                  group_by: str = 'column', auto_adjust: bool = False, back_adjust: bool = False,
                  progress: bool = True, period: str = "max", show_errors: bool = True, interval: str = "1d", prepost: bool = False,
-                 proxy: str | None = None, rounding: bool = False, timeout: float | None = None, **kwargs: Any) -> dict:
+                 proxy: str | None = None, rounding: bool = False, timeout: float | None = None, force_ignore_cache:bool=False, **kwargs: Any) -> dict:
         """Download yahoo tickers -> dict[str,] indexed by ticker
         :Parameters:
             tickers : str, list
@@ -187,7 +217,7 @@ class DownloadCache:
         pass
 
 
-def get_ticker_watchlist():
+def get_ticker_watchlist() -> dict[str,list[str]]:
     
     return {
         "crypto": [
@@ -212,7 +242,7 @@ def get_ticker_watchlist():
             'SKL-GBP', # SKALE
             'SNX-GBP', # Synthetix
             "SOL-GBP", # Solana - Easy to dev DApps
-            "SPACEPIG-GBP", # Space Pig Coin
+            # "SPACEPIG-GBP", # Space Pig Coin
             'UMA-GBP', #UMA
             'UST-GBP', # US Tether - LUNA Network
             "WOO-GBP", # WOO Network - New Exchange token - nice UI
@@ -223,7 +253,7 @@ def get_ticker_watchlist():
             "GBPUSD",
             "EURUSD",
         ],
-        "etf": [],
+        # "etf": [],
         "equity": [
             "AAPL", #Apple
             "AXP", # AMEX
@@ -235,15 +265,15 @@ def get_ticker_watchlist():
             "XAG",  # SILVER
             "HG",  # COPPER
         ],
-        "energy": [
+        # "energy": [
 
-        ],
-        "bonds": [],
-        "swaps": {
-            'ir': [],
-            'inf': [],
-            'fx': [],
-        },
+        # ],
+        # "bonds": [],
+        # "swaps": {
+        #     'ir': [],
+        #     'inf': [],
+        #     'fx': [],
+        # },
     }
 
 
@@ -258,8 +288,12 @@ def load_past_n_days_market_watchlist(download_cacher:DownloadCache, n:int) -> d
     """
     n = min(30,max(0,int(n)))
     
-
-    end_date = datetime.now()
+    # local_tz = datetime.now(timezone(timedelta(0))).astimezone().tzname()
+    # if not local_tz:
+    #     local_tz = 'UTC'
+    # elif local_tz
+    local_timezone_obj = pytz.timezone('UTC')
+    end_date = datetime.now(tz=local_timezone_obj)
     start_date = end_date - timedelta(days=n)
     
     yf_cache = download_cacher
@@ -274,43 +308,59 @@ def load_past_n_days_market_watchlist(download_cacher:DownloadCache, n:int) -> d
         *[f'{fxt}=X' for fxt in tickers["fx"]],
         # *[f'{fxt}={futures_month_suffix}' for fxt in tickers["commodities"]]
     ]
-    data = {}
+    data:dict[str,pd.DataFrame] = {}
+    data_pull: dict[str, pd.DataFrame] = {}
     # We'll define an Excel writer object and the target file
     # Use so more efficient to only save the file once
-    Excelwriter = pd.ExcelWriter("crypto_data.xlsx",
-                                 engine="xlsxwriter",
-                                #  mode='w' # overwrite existing worksheet entirely?
-                                 )
+    # Excelwriter = pd.ExcelWriter("crypto_data.xls",
+    #                             #  engine="xlsxwriter",
+    #                             #  mode='w' # overwrite existing worksheet entirely?
+    #                              )
     price_cols  = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
     for c in price_cols:
         data[c] = pd.DataFrame()
+        data_pull[c] = pd.DataFrame()
     fetched_tickers:list[str] = []
     for ticker in fetch_tickers_yf:
-        data[ticker] = yf_cache.download(ticker,
+        data_pull[ticker] = yf_cache.download(ticker,
                            start=start_date, 
                            end=end_date, 
                            interval='1h')[ticker]
-        for col in price_cols:
-            data[col][ticker] = data[ticker][col] if data[ticker] is not None else None
-        if data[ticker] is not None:
-            fetched_tickers.append(ticker)
-            data[ticker].to_excel(
-                Excelwriter,
-                sheet_name=f'{ticker}_data',
-                index=True,
-                freeze_panes=(1,1), 
-                # columns=["avg_salary", "language"]
-                )
+        for price_data_field in price_cols:
+            # TODO: The pulled data has slighlty different datetime index points for each ticker, the new ticker {ticker} needs to be merged into data[col]
+            # df = pd.merge_asof(df, df_stats, on='ts', direction='nearest')
+            if data[price_data_field].empty:
+                data[price_data_field] = pd.DataFrame({ticker:data_pull[ticker][price_data_field]})
+            elif data_pull[ticker] is not None:
+                _dfleft = data[price_data_field]
+                _dfleft['ts'] = _dfleft.index
+                _dfright = pd.DataFrame({ticker:data_pull[ticker][price_data_field]})
+                _dfright['ts'] = _dfright.index
+                # _dfleft.reset_index(drop=True)
+                # _dfright.reset_index(drop=True)
+                data[price_data_field] = _dfleft.merge(_dfright, how='outer').fillna(method='ffill').set_index('ts')
+                data[price_data_field].index.rename('Datetime', inplace=True)
+                
+        # * No saving to excel now as datasets are too large
+        # if data_pull[ticker] is not None:
+        #     fetched_tickers.append(ticker)
+        #     data_pull[ticker].to_excel(
+        #         Excelwriter,
+        #         sheet_name=f'{ticker}_data',
+        #         index=True,
+        #         freeze_panes=(1,1), 
+        #         # columns=["avg_salary", "language"]
+        #         )
     # And finally we save the file
-    for col in price_cols:
-        data[col].to_excel(
-            Excelwriter,
-            sheet_name=f'{col}_data',
-            index=True,
-            freeze_panes=(1,1), 
-            # columns=["avg_salary", "language"]
-            )
-    Excelwriter.save()
+    # for price_data_field in price_cols:
+    #     data[price_data_field].to_excel(
+    #         Excelwriter,
+    #         sheet_name=f'{price_data_field}_data',
+    #         index=True,
+    #         freeze_panes=(1,1), 
+    #         # columns=["avg_salary", "language"]
+    #         )
+    # Excelwriter.save()
     return data
     
     
@@ -324,8 +374,11 @@ def plot_candlesticks(yf_cache: DownloadCache, ticker_ccy_pairs: str | list[str]
     plot_mpl(yf_cache,ticker_ccy_pairs=ticker_ccy_pairs, plot_mpl_type='candle', n=n, holding_df=holding_df)
     
 def plot_lines(yf_cache:DownloadCache, ticker_ccy_pairs:str|list[str], n:int, holding_df:pd.DataFrame|None=None):
-    """_summary_
-    pull & plot lines of the latest data for the ticker Arg
+    """
+        pull & plot lines of the latest data for the ticker Arg\n
+        plots the absolute levels vs the holding level\n
+        plots the relative returns of ticker1 vs ticker2\n
+        plots returns for each ticker vs beginning of the timeperiod\n
     Args:
         ticker (str): yahoo-finance ticker to fetch
         n (int): number of days back to fetch hourly market data (max=30)
@@ -346,7 +399,7 @@ def plot_mpl(yf_cache:DownloadCache, ticker_ccy_pairs:str|list[str], plot_mpl_ty
     
     n = min(30, max(0, int(n)))
 
-    end_date = datetime.now()
+    end_date = datetime.now(pytz.timezone('UTC'))
     start_date = end_date - timedelta(days=n)
     
     data = yf_cache.download(tickers=ticker_ccy_pairs,
@@ -402,12 +455,13 @@ def plot_mpl(yf_cache:DownloadCache, ticker_ccy_pairs:str|list[str], plot_mpl_ty
                         x = convert_timedelta_days(holding['Time (UTC)'] - data[ticker_ccy_pair].index[0])
                         if holding['Amount'] > 0:
                             # Add +ve pin ^
-                            ax1.plot(x,holding['Price / Coin'].value,'+')
-                            axReturns.plot(x,f1(x),'+')
+                            ax1.plot(np.datetime64(holding['Time (UTC)']),holding['Price / Coin'], color='blue', marker='+', markersize=12)
+                            axReturns.plot(x,f1(x), color='blue', marker='+', markersize=12)
                         else:
                             # Add -ve pin v
-                            ax1.plot(x, holding['Price / Coin'].value, '-')
-                            axReturns.plot(x,f1(x),'-')
+                            ax1.plot(np.datetime64(
+                                holding['Time (UTC)']), holding['Price / Coin'], color='red', marker='-', markersize=12)
+                            axReturns.plot(x,f1(x), color='red', marker='-', markersize=12)
             ax1.set_ylabel('return')
             ax1.legend()               
                             

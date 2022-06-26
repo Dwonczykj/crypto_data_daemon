@@ -11,7 +11,7 @@ class TestYFCache:
     def test_can_load_ticker_from_db(self):
         ticker = 'ETH-USD'
         
-        end_date = datetime.now()
+        end_date = datetime.now(pytz.timezone('UTC'))
         start_date = end_date - timedelta(days=5)
         yf_cache = YFCache('test_yf')
 
@@ -42,7 +42,7 @@ class TestYFCache:
     def test_all_watchlist_fetchable(self):
         tickers = get_ticker_watchlist()
         yf_cache = YFCache('test_yf')
-        end_date = datetime.now()
+        end_date = datetime.now(pytz.timezone('UTC'))
         start_date = end_date - timedelta(days=1)
         
         # Price scraping

@@ -160,7 +160,17 @@ def calculate_all_pairs(price_df:pd.DataFrame, tickers_to_compare:list=[], limit
     plt.show()
 
 def calculate_correlations(price_df:pd.DataFrame, tickers_to_compare:list=[]):
-    # plotting correlation heatmap
+    ''' plotting correlation heatmap of prices timeseries '''
     price_df = price_df_for_tickers(price_df, tickers_to_compare)
     dataplot = sns.heatmap(price_df.corr(), cmap="YlGnBu", annot=True)
+    plt.show()
+
+def calculate_volatility_correlations(price_df:pd.DataFrame, tickers_to_compare:list=[]):
+    ''' plotting correlation heatmap of volatilites '''
+    price_df = price_df_for_tickers(price_df, tickers_to_compare)
+    var_df = pd.DataFrame(columns=price_df.columns)
+    for ticker in price_df.columns:
+        var_df[ticker] = price_df[ticker].rolling(5, win_type ='triang').var()
+    
+    dataplot = sns.heatmap(var_df.corr(), cmap="YlGnBu", annot=True)
     plt.show()
