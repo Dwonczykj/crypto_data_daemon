@@ -119,6 +119,10 @@ if __name__ == '__main__':
     def calculate_pnl(tickers:Iterable[str]=[]):
         if not tickers:
             tickers = tickers_held
+        elif isinstance(tickers, str):
+            tickers = [t.strip().upper() for t in tickers.split(',')]
+        else:
+            tickers = [t.strip().upper() for t in tickers]
         
         pnl = pd.DataFrame(data={t: {'PnL': 0.0, 'AbsoluteBreakevenPrice': 0.0, 'MoneyWeightedReturn': 0.0}
                for t in tickers_held})
@@ -157,20 +161,40 @@ if __name__ == '__main__':
     
     answer = 'pnl'
     while answer and (answer not in ['*', 'q']):
-        answer = input('''What would you like to do?\n
-                    - q -> quit
-                        - pnl -> gets the pnl of all holdings\n
-                        - money_w_ret -> Money Weighted return of Portfolio\n
-                        - abs_vs_hol -> Plots the absolute levels vs the holding level\n
-                        - ret -> Plots returns for each ticker vs beginning of the timeperiod\n
-                        - rel_rtn -> Plots the relative returns of ticker1 vs ticker2\n
-                        - corr -> Plot a heatmap of correlations between prices of tickers\n
-                        - vol_corr -> Plot a heatmap of correlations between volatility of tickers\n
-                        - * -> quit
-                        ''').lower()
+        answer = input('What would you like to do?\n' + 
+                       '\t- q -> quit\n' +
+                        '\t- pnl -> gets the pnl of all holdings\n' + 
+                        '\t- pnl, [tkr] -> show pnl for [, tkr] (- comma separated tickers) with recent pricing\n' + 
+                        '\t- var, [tkr] -> show me how much fiat currency i have at risk at the moment, both in current price, and from amount spent. Optionally filter tickers using [, tkr] - comma separated tickers\n'+
+                        '\t- money_w_ret -> Money Weighted return of Portfolio\n' + 
+                        '\t- abs_vs_hol -> Plots the absolute levels vs the holding level\n' + 
+                        '\t- ret -> Plots returns for each ticker vs beginning of the timeperiod\n' + 
+                        '\t- rel_rtn -> Plots the relative returns of ticker1 vs ticker2\n' + 
+                        '\t- corr -> Plot a heatmap of correlations between prices of tickers\n' + 
+                        '\t- vol_corr -> Plot a heatmap of correlations between volatility of tickers\n' + 
+                        '\t- * -> quit' + 
+                        '').lower()
         if answer == 'pnl':
             pnl_df = calculate_pnl()
             print(pnl_df)
+        elif answer.startswith('pnl,'):
+            tickers = answer[len('pnl,'):].strip().upper().split(',')
+            pnl_df = calculate_pnl(tickers = tickers)
+            plot_lines(yf_cache, ticker_ccy_pairs=tickers, n=7, holding_df=holdings_df)
+        elif answer.startswith('var'):
+            tickers = []
+            if ',' in answer:
+                tickers = answer[len('var,'):].strip().upper().split(',')
+            holdings_sub = holdings_df[holdings_df['Ticker'].isin(tickers)] if tickers else holdings_df
+            cash_paid_series = holdings_sub.groupby('Ticker')['Cash Paid (inc fee)'].sum()
+            print(Fore.GREEN + cash_paid_series + Style.RESET_ALL)
+            
+            pnl_df = calculate_pnl(tickers = tickers)
+            if pnl_df is not None:
+                current_position_series = pnl_df.HoldingToDate * pnl_df.LivePrice
+                print(Fore.GREEN + 'CASH VALUE OF HOLDINGS' + Style.RESET_ALL)
+            else:
+                print(Fore.RED + 'Unable to calculate PnLs for Holdings' + Style.RESET_ALL)
         elif answer == 'money_w_ret':
             logging.warn('MoneyWeighted Returns not implemented yet')
             calculate_pnl()

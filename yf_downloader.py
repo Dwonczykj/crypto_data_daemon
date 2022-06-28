@@ -123,6 +123,7 @@ class YFCache(DownloadCache):
     
     def get_live_tick_yf(self, ticker: str = 'SPY'):
         now = datetime.now(pytz.timezone('UTC'))
+        price:float = 0.0
         try:
             if not self.check_bad_ticker_db(ticker=ticker):
                 price = stock_info.get_live_price(ticker)
@@ -134,8 +135,9 @@ class YFCache(DownloadCache):
             self.add_bad_ticker_db(ticker=ticker)
             price = 0.0
         except:
-            return None
-            
+            return 0.0
+        now_str = now.strftime('%d-%m-%Y %H:%M:%s %z')
+        assert isinstance(price, float), f'Live Price requested from YahooFinance for {ticker} at {now_str} must be float'
         logging.debug(now, f'{ticker}:', price)
         return price
 

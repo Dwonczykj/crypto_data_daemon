@@ -1,14 +1,18 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
 import pytz
+from dotenv import load_dotenv
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 from tinydb import Query
 
 from downloaders import DownloadCache
+
+load_dotenv(dotenv_path='./env')
 
 url = 'https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
 parameters = {
@@ -18,7 +22,7 @@ parameters = {
 }
 headers = {
   'Accepts': 'application/json',
-  'X-CMC_PRO_API_KEY': '43437b79-ca56-4b1e-9d0a-bcbbf6a7e527',
+  'X-CMC_PRO_API_KEY': os.getenv('COINMARKETPRO_API_KEY'),
 }
 
 

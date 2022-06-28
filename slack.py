@@ -16,15 +16,11 @@ load_dotenv()
 client = WebClient(token=os.getenv('SLACK_BOT_TOKEN')) #type:ignore
 # client.files_upload(channels='C03JV0WSCMT', file="./temp.png")
 
-# from slacker import Slacker
-
-# slack = Slacker("supersecretkey")
-
 def upload_plot_slack(fig:Figure):
     try:
         fig.savefig("temp.png")
         filepath="./temp.png"
-        response = client.files_upload(channels='C03JV0WSCMT', file=filepath)
+        response = client.files_upload(channels=os.getenv('SLACK_CRYPTO_CHANNEL_ID'), file=filepath)
         assert response["file"]  # the uploaded file
     except SlackApiError as e:
         # You will get a SlackApiError if "ok" is False
